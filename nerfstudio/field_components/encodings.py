@@ -27,7 +27,7 @@ from jaxtyping import Float, Int, Shaped
 from torch import Tensor, nn
 
 from nerfstudio.field_components.base_field_component import FieldComponent
-from nerfstudio.utils.math import components_from_spherical_harmonics, expected_sin
+from nerfstudio.utils.math import components_from_spherical_harmonics, expected_sin, lm_array_for_von_Mises_distribution
 from nerfstudio.utils.printing import print_tcnn_speed_warning
 
 try:
@@ -705,3 +705,84 @@ class SHEncoding(Encoding):
         if self.tcnn_encoding is not None:
             return self.tcnn_encoding(in_tensor)
         return self.pytorch_fwd(in_tensor)
+
+
+class IntegratedDirectionEncoding(Encoding):
+    
+    def __init__(self, levels: int = 4, implementation: Literal["tcnn", "torch"] = "torch") -> None:
+        super().__init__(in_dim=3)
+        
+        if levels <= 0 or levels > 4:
+            raise ValueError(f"Spherical harmonic encoding only supports 1 to 4 levels, requested {levels}")
+
+        self.levels = levels
+
+        self.tcnn_encoding = None
+        if implementation == "tcnn" and not TCNN_EXISTS:
+            print_tcnn_speed_warning("IntegratedDirectionEncoding")
+        elif implementation == "tcnn":
+            encoding_config = {
+                "otype": "SphericalHarmonics",  ##! check options
+                "degree": levels,
+            }
+            self.tcnn_encoding = tcnn.Encoding(
+                n_input_dims=3,
+                encoding_config=encoding_config,
+            )
+
+    def generate_ide_fn(self, directions: Float[Tensor, "*bs input_dim"], roughness: Float[Tensor, "*bs input_dim"]):
+        """Generate integrated directional encoding (IDE) function.
+        This function returns a function that computes the integrated directional
+        encoding from Equations 6-8 of arxiv.org/abs/2112.03907.
+
+        Args:
+            directions: [..., 3] array of Cartesian coordinates of viewing directions to evaluate at.
+            roughness: [..., 1] the concentration parameter of the von Mises-Fisher distribution (which is inverse of Kappa as mentioned in eq 7-8 of arxiv.org/abs/2112.03907)
+
+        Returns:
+            A function for evaluating integrated directional encoding.
+        """
+
+        ml_array = lm_array_for_von_Mises_distribution(self.levels)
+        l_max = 2 ** (self.levels - 1)
+
+        # Create a matrix corresponding to ml_array holding all coefficients, which,
+        # when multiplied (from the right) by the z coordinate Vandermonde matrix,
+        # results in the z component of the encoding.
+        mat = np.zeros((l_max + 1, ml_array.shape[1]))
+        for i, (m, l) in enumerate(ml_array.T):
+            for k in range(l - m + 1):
+                mat[k, i] = sph_harm_coeff(l, m, k)
+
+        mat = torch.Tensor(mat)
+
+        x = directions[..., 0:1]
+        y = directions[..., 1:2]
+        z = directions[..., 2:3]
+
+        vmz = torch.cat([z**i for i in range(mat.shape[0])], dim=-1)
+        vmxy = torch.cat([(x + 1j * y) ** m for m in ml_array[0, :]], dim=-1)
+
+        sph_harms = vmxy * torch.matmul(vmz, mat.to(directions.device))
+
+        sigma = torch.Tensor(0.5 * ml_array[1, :] * (ml_array[1, :] + 1)).to(
+            roughness.device
+        )
+        ide = sph_harms * torch.exp(-sigma * roughness)
+
+        return torch.cat([torch.real(ide), torch.imag(ide)], dim=-1)
+
+
+    def get_out_dim(self) -> int:
+        ## TODO fix this
+        return self.levels**2
+
+    @torch.no_grad()
+    def pytorch_fwd(self, in_tensor: Float[Tensor, "*bs input_dim"], roughness: Float[Tensor, "*bs input_dim"]) -> Float[Tensor, "*bs output_dim"]:
+        """Forward pass using pytorch. Significantly slower than TCNN implementation."""
+        return generate_ide_fn(levels=self.levels, directions=in_tensor, roughness=roughness)
+
+    def forward(self, in_tensor: Float[Tensor, "*bs input_dim"], roughness: Float[Tensor, "*bs input_dim"]) -> Float[Tensor, "*bs output_dim"]:
+        if self.tcnn_encoding is not None:
+            return self.tcnn_encoding(in_tensor, roughness)
+        return self.pytorch_fwd(in_tensor, roughness)

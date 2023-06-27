@@ -89,6 +89,23 @@ def components_from_spherical_harmonics(
 
     return components
 
+def lm_array_for_von_Mises_distribution(    
+    levels: int
+) -> Float[Tensor, "*batch components"]:
+    """
+    Returns a list with all pairs of (l, m) values to use in the encoding.
+    Args:
+        levels: Number of spherical harmonic levels to compute.
+    """
+    ml_list = []
+    for i in range(self.levels):
+        l = 2**i
+        # Only use nonnegative m values, later splitting real and imaginary parts.
+        for m in range(l + 1):
+            ml_list.append((m, l))
+
+    ml_array = torch.tensor(ml_list).T
+    return ml_array
 
 @dataclass
 class Gaussians:
