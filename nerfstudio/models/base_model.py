@@ -67,7 +67,7 @@ class Model(nn.Module):
     """Current training step.
     This is set in the ``forward`` method. Access from other functions with ``self.step``.
     TODO this should be a parameter for every function, not an attribute.
-    Making it a parameter would require refactoring all subclasses of Model.
+    Making it a parameter would require refactoring all subclasses of Model, and Pipeline.
     """
 
     def __init__(
@@ -133,18 +133,19 @@ class Model(nn.Module):
             Outputs of model. (ie. rendered colors)
         """
 
-    def forward(self, ray_bundle: RayBundle, step: int) -> Dict[str, Union[torch.Tensor, List]]:
+    def forward(self, ray_bundle: RayBundle, step: int = -1) -> Dict[str, Union[torch.Tensor, List]]:
         """Run forward starting with a ray bundle. This outputs different things depending on the configuration
         of the model and whether or not the batch is provided (whether or not we are training basically)
 
         Args:
             ray_bundle: containing all the information needed to render that ray latents included
-            step: current training step
+            step: Current training step. ``self.step`` is set to this if it is not -1.
         """
-        self.step = step
+        if step != -1:
+            self.step = step
 
         if self.collider is not None:
-            ray_bundle = self.collider(ray_bundle)
+            ray_bundle = self.collider(ray_bundle, step=step)
 
         return self.get_outputs(ray_bundle)
 
