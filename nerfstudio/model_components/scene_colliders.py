@@ -195,34 +195,38 @@ class AnnealedCollider(NearFarCollider):
     Over the course of some steps, they expand to their original values.
 
     Args:
-        duration: Number of training steps annealing lasts.
-        center: Factor between near and far. The two planes meet here and are expanded.
-        start: Minimum distance between the planes (factor). Also how close the planes start.
+        anneal_duration: Number of training steps annealing lasts.
+        anneal_start: Minimum distance between the planes (factor). Also how close the planes start.
     """
 
     def __init__(
             self,
             near_plane: float,
             far_plane: float,
-            duration: float,
-            start: float,
+            anneal_duration: float = 256.0,
+            anneal_start: float = 0.5,
             **kwargs
             ):
         super().__init__(near_plane, far_plane, **kwargs)
-        self.duration = duration
-        self.start = start
+        self.anneal_duration = anneal_duration
+        self.anneal_start = anneal_start
 
     def get_anneal_fac(self, step: int) -> float:
         """Get annealing factor at step.
         """
-        return min(max(step / self.duration, self.start), 1)
+        return min(max(step / self.anneal_duration, self.anneal_start), 1)
 
     def set_nears_and_fars(self, ray_bundle: RayBundle, step: int, **kwargs) -> RayBundle:
         ray_bundle = super().set_nears_and_fars(ray_bundle)
         assert ray_bundle.nears is not None and ray_bundle.fars is not None
 
         # Annealing
-        fac = self.get_anneal_fac(step)
+        if step < 0:
+            # Step may be -1 when called from eval. In this case, use full sampling space.
+            fac = 1
+        else:
+            fac = self.get_anneal_fac(step)
+        fac = self.anneal_start
         mid = (ray_bundle.nears + ray_bundle.fars) / 2
         ray_bundle.nears = mid + (ray_bundle.nears - mid) * fac
         ray_bundle.fars = mid + (ray_bundle.fars - mid) * fac

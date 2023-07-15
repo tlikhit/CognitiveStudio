@@ -70,7 +70,7 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
+docs/_build
 
 # PyBuilder
 .pybuilder/
@@ -162,7 +162,7 @@ cython_debug/
 #.idea/
 
 # Experiments and outputs
-outputs/
+outputs
 exports/
 renders/
 # tensorboard log files

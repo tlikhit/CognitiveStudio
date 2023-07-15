@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Implementation of RegNeRF.
-Author: Patrick Huang
+"""Implementation of RegNeRF.
 """
 
 from dataclasses import dataclass, field
 from typing import Dict, Type
 
 from nerfstudio.configs.config_utils import to_immutable_dict
+from nerfstudio.losses.depth_smoothness import DepthSmoothnessLossConfig, DepthSmoothnessLoss
+from nerfstudio.model_components.renderers import DepthRenderer
 from nerfstudio.model_components.scene_colliders import AnnealedCollider
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.vanilla_nerf import VanillaModelConfig
@@ -28,7 +28,7 @@ from nerfstudio.models.vanilla_nerf import VanillaModelConfig
 
 @dataclass
 class RegNerfModelConfig(VanillaModelConfig):
-    """Configuration for RegNeRF.
+    """Config for RegNeRF.
     """
 
     _target: Type = field(default_factory=lambda: RegNerfModel)
@@ -38,13 +38,16 @@ class RegNerfModelConfig(VanillaModelConfig):
         "rgb_loss_fine": 1.0,
         "depth_smoothness": 0.1,
     })
+
     collider_params: Dict[str, float] = to_immutable_dict({
-        "near_plane": 2.0,
-        "far_plane": 6.0,
-        "duration": 2000,
-        "start": 0.5,
+        "near_plane": 1,
+        "far_plane": 4,
+        "anneal_duration": 256,
     })
     """For AnnealedCollider"""
+
+    ds_loss: DepthSmoothnessLossConfig = DepthSmoothnessLossConfig()
+    """Depth smoothness loss config."""
 
 
 class RegNerfModel(MipNerfModel):
@@ -53,21 +56,22 @@ class RegNerfModel(MipNerfModel):
 
     collider: AnnealedCollider
     config: RegNerfModelConfig
+    ds_loss: DepthSmoothnessLoss
 
     def populate_modules(self):
         """
-        - Overrides collider to AnnealedCollider.
+        - Sets collider to AnnealedCollider (overrides super).
+        - Sets depth renderer method to "expected". This propogates gradient.
+        - Setup depth smoothness loss.
         """
         super().populate_modules()
 
         self.collider = AnnealedCollider(**self.config.collider_params)
-
-    def get_outputs(self, ray_bundle):
-        #ray_bundle.nears[...] = 0
-        #ray_bundle.fars[...] = 0
-        return super().get_outputs(ray_bundle)
+        self.ds_loss = self.config.ds_loss.setup()
+        self.renderer_depth = DepthRenderer(method="expected")
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None):
         loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
         loss_dict["anneal_fac"] = self.collider.get_anneal_fac(self.step)
+        loss_dict["depth_smoothness"] = self.ds_loss(self, self.step)
         return loss_dict
