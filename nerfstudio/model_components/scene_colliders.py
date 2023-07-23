@@ -224,7 +224,6 @@ class AnnealedCollider(NearFarCollider):
             fac = 1
         else:
             fac = self.get_anneal_fac(step)
-        fac = self.anneal_start
         mid = (ray_bundle.nears + ray_bundle.fars) / 2
         ray_bundle.nears = mid + (ray_bundle.nears - mid) * fac
         ray_bundle.fars = mid + (ray_bundle.fars - mid) * fac
