@@ -4,6 +4,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Tuple, Type, Union
 
+import numpy as np
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -21,7 +22,7 @@ class DepthSmoothnessLossConfig(LossConfig):
     _target: Type = field(default_factory=lambda: DepthSmoothnessLoss)
 
     batch_size: int = 8
-    """Number of random poses to render each step.
+    """Number of random poses to process each step.
     """
 
     s_patch: int = 8
@@ -36,12 +37,12 @@ class DepthSmoothnessLossConfig(LossConfig):
     Here, it is hardcoded.
     """
 
-    radius: Union[float, Tuple[float, float]] = 4.03112885717555
+    radius: Union[float, Tuple[float, float]] = (2, 5)  #4.03112885717555
     """Radius OR min/max radius to sample from.
     The official RegNerf implementation uses this particular default value.
     """
 
-    only_upper: bool = True
+    only_upper: bool = False
     """If True, only sample from the upper hemisphere (z >= 0).
     """
 
@@ -116,4 +117,11 @@ class DepthSmoothnessLoss(Loss):
             loss += F.mse_loss(depth[:, 1:, :, :], depth[:, :-1, :, :])
         loss /= 4
 
-        return loss
+        # Start DS loss at high weight, then decrease to 1. (RegNerf paper)
+        # TODO this should be in the config
+        if step < 512:
+            scale = np.interp(step, [0, 512], [1000, 1])
+        else:
+            scale = 1
+
+        return loss * scale

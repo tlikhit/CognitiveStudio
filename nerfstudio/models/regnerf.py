@@ -16,14 +16,15 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Type
+from typing import Any, Dict, Type
 
 from nerfstudio.configs.config_utils import to_immutable_dict
 from nerfstudio.losses.depth_smoothness import DepthSmoothnessLossConfig, DepthSmoothnessLoss
-from nerfstudio.model_components.renderers import DepthRenderer
+from nerfstudio.model_components.renderers import DepthRenderer, RGBRenderer
 from nerfstudio.model_components.scene_colliders import AnnealedCollider
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.vanilla_nerf import VanillaModelConfig
+from nerfstudio.utils import colors
 
 
 @dataclass
@@ -39,9 +40,9 @@ class RegNerfModelConfig(VanillaModelConfig):
         "depth_smoothness": 0.1,
     })
 
-    collider_params: Dict[str, float] = to_immutable_dict({
-        "near_plane": 1,
-        "far_plane": 4,
+    collider_params: Dict[str, Any] = to_immutable_dict({
+        "near_plane": 0.5,
+        "far_plane": 4.5,
         "anneal_duration": 256,
     })
     """For AnnealedCollider"""
@@ -61,14 +62,16 @@ class RegNerfModel(MipNerfModel):
     def populate_modules(self):
         """
         - Sets collider to AnnealedCollider (overrides super).
-        - Sets depth renderer method to "expected". This propogates gradient.
         - Setup depth smoothness loss.
+        - Sets depth renderer method to "expected". This propogates gradient.
+        - Sets bg color to black (for dtu scenes).
         """
         super().populate_modules()
 
         self.collider = AnnealedCollider(**self.config.collider_params)
         self.ds_loss = self.config.ds_loss.setup()
         self.renderer_depth = DepthRenderer(method="expected")
+        self.renderer_rgb = RGBRenderer(background_color=colors.BLACK)
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None):
         loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
