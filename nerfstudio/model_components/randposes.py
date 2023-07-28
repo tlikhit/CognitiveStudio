@@ -2,14 +2,14 @@
 Random poses are used in many regularization methods (e.g. RegNerf, DietNerf).
 """
 
-from typing import Tuple, Union
+from typing import Dict, Tuple, Union
 
 import torch
 from jaxtyping import Float
 from torch import Tensor
 
 from nerfstudio.cameras.cameras import Cameras, CameraType
-from nerfstudio.model_components.ray_generators import RayGenerator
+from nerfstudio.cameras.rays import RayBundle
 
 
 def sample_randposes_sphere(
@@ -96,3 +96,61 @@ def poses_to_cameras(
         cy=resolution[1] / 2,
     )
     return camera
+
+
+def forward_cameras(
+        model,
+        step,
+        cameras: Cameras,
+        resolution: Union[int, Tuple[int, int]],
+    ) -> Dict[str, Tensor]:
+    """Get model outputs for a batch of cameras.
+
+    The ``Cameras`` object contains multiple cameras. Normally, only one camera is
+    rendered at once; the corresponding RayBundle is ``cameras.generate_rays(i)``.
+
+    For randposes which usually have small render resolutions, this is inefficient.
+    Instead, this function combines all rays from all cameras into one RayBundle.
+
+    There is a lot of tedious code (e.g. reshaping tensors) which is handled here.
+
+    Args:
+        model: Model to run.
+        step: Training step. Required for model forward pass.
+        cameras: Cameras to use.
+        resolution: Resolution of each render. If an int, assumes square resolution.
+
+    Returns:
+        Dict with same keys as ``model.get_outputs``. Each value is reshaped
+        to ``(batch_size, s_patch, s_patch, x)`` where x is 3 for RGB and 1
+        for depth/accumulation.
+    """
+    if isinstance(resolution, (int, float)):
+        resolution = (resolution, resolution)
+    batch_size = cameras.camera_to_worlds.shape[0]
+
+    # Allocate tensors for all rays
+    num_px = resolution[0] * resolution[1]
+    total_ray_count = batch_size * num_px
+    combined_rays = RayBundle(
+        origins=torch.empty(total_ray_count, 3, device=model.device),
+        directions=torch.empty(total_ray_count, 3, device=model.device),
+        pixel_area=torch.empty(total_ray_count, 1, device=model.device),
+    )
+    # Copy rays generated from each camera.
+    for i in range(cameras.size):
+        ray_bundle = cameras.generate_rays(i)
+        ind = i * num_px
+        combined_rays.origins[ind : ind+num_px] = ray_bundle.origins.view(num_px, 3)
+        combined_rays.directions[ind : ind+num_px] = ray_bundle.directions.view(num_px, 3)
+        combined_rays.pixel_area[ind : ind+num_px] = ray_bundle.pixel_area.view(num_px, 1)
+
+    # Run rays through model
+    combined_rays = model.collider(combined_rays, step)
+    outputs = model.get_outputs(combined_rays)
+
+    # Reshape outputs
+    for k, v in outputs.items():
+        outputs[k] = v.view(batch_size, resolution[0], resolution[1], -1)
+
+    return outputs
