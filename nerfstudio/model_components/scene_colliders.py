@@ -33,15 +33,13 @@ class SceneCollider(nn.Module):
         self.kwargs = kwargs
         super().__init__()
 
-    def set_nears_and_fars(self, ray_bundle: RayBundle) -> RayBundle:
+    def set_nears_and_fars(self, ray_bundle: RayBundle, **kwargs) -> RayBundle:
         """To be implemented."""
         raise NotImplementedError
 
-    def forward(self, ray_bundle: RayBundle) -> RayBundle:
-        """Sets the nears and fars if they are not set already."""
-        if ray_bundle.nears is not None and ray_bundle.fars is not None:
-            return ray_bundle
-        return self.set_nears_and_fars(ray_bundle)
+    def forward(self, ray_bundle: RayBundle, step: int, **kwargs) -> RayBundle:
+        """Sets the nears and fars."""
+        return self.set_nears_and_fars(ray_bundle, step=step)
 
 
 class AABBBoxCollider(SceneCollider):
@@ -94,7 +92,7 @@ class AABBBoxCollider(SceneCollider):
 
         return nears, fars
 
-    def set_nears_and_fars(self, ray_bundle: RayBundle) -> RayBundle:
+    def set_nears_and_fars(self, ray_bundle: RayBundle, **kwargs) -> RayBundle:
         """Intersects the rays with the scene box and updates the near and far values.
         Populates nears and fars fields and returns the ray_bundle.
 
@@ -145,7 +143,7 @@ class SphereCollider(SceneCollider):
         self.radius = radius
         self.near_plane = near_plane
 
-    def set_nears_and_fars(self, ray_bundle: RayBundle) -> RayBundle:
+    def set_nears_and_fars(self, ray_bundle: RayBundle, **kwargs) -> RayBundle:
         """Intersects the rays with the scene box and updates the near and far values.
         Populates nears and fars fields and returns the ray_bundle.
 
@@ -179,9 +177,55 @@ class NearFarCollider(SceneCollider):
         self.far_plane = far_plane
         super().__init__(**kwargs)
 
-    def set_nears_and_fars(self, ray_bundle: RayBundle) -> RayBundle:
+    def set_nears_and_fars(self, ray_bundle: RayBundle, **kwargs) -> RayBundle:
         ones = torch.ones_like(ray_bundle.origins[..., 0:1])
         near_plane = self.near_plane if self.training else 0
         ray_bundle.nears = ones * near_plane
         ray_bundle.fars = ones * self.far_plane
+        return ray_bundle
+
+
+class AnnealedCollider(NearFarCollider):
+    """Near/far collider with annealing (bring near/far closer to each other).
+
+    Implements the collider described in the RegNerf paper.
+    Near and far planes are brought together at the beginning.
+    Over the course of some steps, they expand to their original values.
+
+    Args:
+        anneal_duration: Number of training steps annealing lasts.
+        anneal_start: Minimum distance between the planes (factor). Also how close the planes start.
+    """
+
+    def __init__(
+            self,
+            near_plane: float,
+            far_plane: float,
+            anneal_duration: float = 256.0,
+            anneal_start: float = 0.5,
+            **kwargs
+            ):
+        super().__init__(near_plane, far_plane, **kwargs)
+        self.anneal_duration = anneal_duration
+        self.anneal_start = anneal_start
+
+    def get_anneal_fac(self, step: int) -> float:
+        """Get annealing factor at step.
+        """
+        return min(max(step / self.anneal_duration, self.anneal_start), 1)
+
+    def set_nears_and_fars(self, ray_bundle: RayBundle, step: int, **kwargs) -> RayBundle:
+        ray_bundle = super().set_nears_and_fars(ray_bundle)
+        assert ray_bundle.nears is not None and ray_bundle.fars is not None
+
+        # Annealing
+        if step < 0:
+            # Step may be -1 when called from eval. In this case, use full sampling space.
+            fac = 1
+        else:
+            fac = self.get_anneal_fac(step)
+        mid = (ray_bundle.nears + ray_bundle.fars) / 2
+        ray_bundle.nears = mid + (ray_bundle.nears - mid) * fac
+        ray_bundle.fars = mid + (ray_bundle.fars - mid) * fac
+
         return ray_bundle
