@@ -52,6 +52,11 @@ class DepthSmoothnessLoss(Loss):
 
     Samples random poses from fixed radii pointing towards origin
     (uses ``sample_randposes_sphere`` from ``randposes.py``).
+
+    Note:
+    This uses the depth output of the model, which is rendered by the DepthRenderer.
+    The DepthRenderer has a "method" argument.
+    It must be set to "expected" to propogate gradients properly.
     """
 
     config: DepthSmoothnessLossConfig
@@ -60,7 +65,7 @@ class DepthSmoothnessLoss(Loss):
         """Gets model outputs for a batch of cameras.
 
         TODO this should be moved to ``randposes.py``.
-        There is a lot of tedious code (e.g. flattening tensors) which is handled here.
+        There is a lot of tedious code (e.g. reshaping tensors) which is handled here.
 
         Returns:
             Dict with same keys as ``model.get_outputs``. Each value is reshaped
