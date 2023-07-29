@@ -70,8 +70,7 @@ causing the model to learn a coherent object in the beginning of training.
 
 ## Results
 
-|  Num. GT images  |  Official PSNR  |  CognitiveStudio's PSNR  |
-| ---------------- | --------------- | ------------------------ |
-| 3                | 18.89           |                          |
-| 6                | 22.20           |                          |
-| 9                | 24.93           |                          |
+| Implementation  | 3 view | 6 view | 9 view |
+| --------------- | ------ | ------ | ------ |
+| Official        | 18.89  | 22.20  | 24.93  |
+| CognitiveStudio | 11.27  | 17.93  | 24.19  |

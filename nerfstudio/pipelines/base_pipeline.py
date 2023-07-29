@@ -40,14 +40,16 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.cuda.amp.grad_scaler import GradScaler
 
 from nerfstudio.configs import base_config as cfg
+from nerfstudio.configs.config_utils import to_immutable_dict
 from nerfstudio.data.datamanagers.base_datamanager import (
     DataManager,
     DataManagerConfig,
     VanillaDataManager,
 )
 from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes
+from nerfstudio.losses.base_loss import LossConfig
 from nerfstudio.models.base_model import Model, ModelConfig
-from nerfstudio.utils import profiler
+from nerfstudio.utils import profiler, misc
 
 
 def module_wrapper(ddp_or_model: Union[DDP, Model]) -> Model:
@@ -227,6 +229,10 @@ class VanillaPipelineConfig(cfg.InstantiateConfig):
     """specifies the datamanager config"""
     model: ModelConfig = ModelConfig()
     """specifies the model config"""
+    losses: Dict[str, LossConfig] = to_immutable_dict({})
+    """Losses to apply to the model. Mapping of loss name (custom) to loss config object."""
+    loss_coefficients: Dict[str, float] = to_immutable_dict({})
+    """Corresponds to each key in ``losses``."""
 
 
 class VanillaPipeline(Pipeline):
@@ -282,6 +288,13 @@ class VanillaPipeline(Pipeline):
         )
         self.model.to(device)
 
+        # Setup losses.
+        self.losses = {}
+        for name, cfg in config.losses.items():
+            self.losses[name] = cfg.setup(
+                pipeline=self,
+            ).to(device)
+
         self.world_size = world_size
         if world_size > 1:
             self._model = typing.cast(Model, DDP(self._model, device_ids=[local_rank], find_unused_parameters=True))
@@ -291,6 +304,18 @@ class VanillaPipeline(Pipeline):
     def device(self):
         """Returns the device that the model is on."""
         return self.model.device
+
+    def apply_loss_fns(self, loss_dict, step, ray_bundle, batch, outputs) -> None:
+        """Applies each of config.losses, then scales according to config.loss_coefficients
+
+        Args:
+            loss_dict: Dict of losses, probably obtained from ``model.get_loss_dict``.
+                Modifies in place.
+            step, ray_bundle, batch, outputs: Vars from training loop. Will be passed to loss fns.
+        """
+        for name, loss in self.losses.items():
+            loss_dict[name] = loss(self.model, step, ray_bundle, batch, outputs)
+        misc.scale_dict(loss_dict, self.config.loss_coefficients)
 
     @profiler.time_function
     def get_train_loss_dict(self, step: int):
@@ -317,6 +342,7 @@ class VanillaPipeline(Pipeline):
                 )
 
         loss_dict = self.model.get_loss_dict(model_outputs, batch, metrics_dict)
+        self.apply_loss_fns(loss_dict, step, ray_bundle, batch, model_outputs)
 
         return model_outputs, loss_dict, metrics_dict
 
@@ -336,10 +362,14 @@ class VanillaPipeline(Pipeline):
             step: current iteration step
         """
         self.eval()
+
         ray_bundle, batch = self.datamanager.next_eval(step)
         model_outputs = self.model(ray_bundle, step)
+
         metrics_dict = self.model.get_metrics_dict(model_outputs, batch)
         loss_dict = self.model.get_loss_dict(model_outputs, batch, metrics_dict)
+        self.apply_loss_fns(loss_dict, step, ray_bundle, batch, model_outputs)
+
         self.train()
         return model_outputs, loss_dict, metrics_dict
 

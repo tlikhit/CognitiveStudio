@@ -49,6 +49,7 @@ from nerfstudio.engine.schedulers import (
 from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.sdf_field import SDFFieldConfig
+from nerfstudio.losses.depth_smoothness import DepthSmoothnessLossConfig
 from nerfstudio.models.depth_nerfacto import DepthNerfactoModelConfig
 from nerfstudio.models.freenerf import FreeNerfModelConfig
 from nerfstudio.models.generfacto import GenerfactoModelConfig
@@ -627,6 +628,12 @@ method_configs["regnerf"] = TrainerConfig(
         ),
         model=RegNerfModelConfig(
         ),
+        losses={
+            "depth_smoothness": DepthSmoothnessLossConfig(),
+        },
+        loss_coefficients={
+            "depth_smoothness": 0.1,
+        },
     ),
     optimizers={
         "fields": {
