@@ -32,9 +32,10 @@ The following methods are supported in nerfstudio:
     LERF<lerf.md>
     Mip-NeRF<mipnerf.md>
     NeRF<nerf.md>
+    RegNeRF<regnerf.md>
+    FreeNeRF<freenerf.md>
     Nerfacto<nerfacto.md>
     NeRFPlayer<nerfplayer.md>
-    RegNeRF<regnerf.md>
     Tetra-NeRF<tetranerf.md>
     TensoRF<tensorf.md>
     Generfacto<generfacto.md>

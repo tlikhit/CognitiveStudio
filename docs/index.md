@@ -69,6 +69,7 @@ extensions/sdfstudio
 
 nerfology/methods/index
 nerfology/model_components/index
+nerfology/benchmarks/index
 ```
 
 ```{toctree}
