@@ -137,6 +137,8 @@ class MipNerfModel(Model):
             "accumulation_fine": accumulation_fine,
             "depth_coarse": depth_coarse,
             "depth_fine": depth_fine,
+            "field_outputs_coarse": field_outputs_coarse,
+            "field_outputs_fine": field_outputs_fine,
         }
         return outputs
 

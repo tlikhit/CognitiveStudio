@@ -82,7 +82,7 @@ class DepthSmoothnessLoss(Loss):
 
     config: DepthSmoothnessLossConfig
 
-    def compute_loss(self, model, step, **kwargs):
+    def compute_loss(self, *, model, step, **kwargs):
         assert model.collider is not None, "Collider must be set."
 
         randposes = sample_randposes_sphere(

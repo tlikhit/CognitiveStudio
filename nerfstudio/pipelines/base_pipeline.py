@@ -314,7 +314,13 @@ class VanillaPipeline(Pipeline):
             step, ray_bundle, batch, outputs: Vars from training loop. Will be passed to loss fns.
         """
         for name, loss in self.losses.items():
-            loss_dict[name] = loss(self.model, step, ray_bundle, batch, outputs)
+            loss_dict[name] = loss(
+                model=self.model,
+                step=step,
+                ray_bundle=ray_bundle,
+                batch=batch,
+                outputs=outputs
+            )
         misc.scale_dict(loss_dict, self.config.loss_coefficients)
 
     @profiler.time_function

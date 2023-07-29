@@ -232,8 +232,9 @@ class FreeNerfEncoding(NeRFEncoding):
         scaled_in_tensor = 2 * torch.pi * in_tensor  # scale to [0, 2pi]
         freqs = 2 ** torch.linspace(self.min_freq, self.max_freq, self.num_frequencies).to(in_tensor.device)
         # Mask higher frequencies
-        mask_index = self.get_freq_reg_index(self.step)
-        freqs[mask_index:] = 0
+        if self.step > 0:
+            mask_index = self.get_freq_reg_index(self.step)
+            freqs[mask_index:] = 0
         scaled_inputs = scaled_in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
         scaled_inputs = scaled_inputs.view(*scaled_inputs.shape[:-2], -1)  # [..., "input_dim" * "num_scales"]
 

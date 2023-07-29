@@ -48,6 +48,7 @@ class Loss(torch.nn.Module):
 
     def compute_loss(
             self,
+            *,
             model: Model,
             step: int,
             ray_bundle: RayBundle,
@@ -73,6 +74,7 @@ class Loss(torch.nn.Module):
 
     def forward(
             self,
+            *,
             model: Model,
             step: int,
             ray_bundle: RayBundle,
@@ -82,4 +84,11 @@ class Loss(torch.nn.Module):
         ) -> Tensor:
         """Same as ``compute_loss``.
         """
-        return self.compute_loss(model, step, **kwargs)
+        return self.compute_loss(
+            model=model,
+            step=step,
+            ray_bundle=ray_bundle,
+            batch=batch,
+            outputs=outputs,
+            **kwargs
+        )

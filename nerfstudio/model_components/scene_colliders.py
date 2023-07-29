@@ -219,10 +219,8 @@ class AnnealedCollider(NearFarCollider):
         assert ray_bundle.nears is not None and ray_bundle.fars is not None
 
         # Annealing
-        if step < 0:
-            # Step may be -1 when called from eval. In this case, use full sampling space.
-            fac = 1
-        else:
+        fac = 1
+        if step > 0:
             fac = self.get_anneal_fac(step)
         mid = (ray_bundle.nears + ray_bundle.fars) / 2
         ray_bundle.nears = mid + (ray_bundle.nears - mid) * fac

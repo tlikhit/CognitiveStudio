@@ -50,6 +50,7 @@ from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.sdf_field import SDFFieldConfig
 from nerfstudio.losses.depth_smoothness import DepthSmoothnessLossConfig
+from nerfstudio.losses.occlusion import OcclusionLossConfig
 from nerfstudio.models.depth_nerfacto import DepthNerfactoModelConfig
 from nerfstudio.models.freenerf import FreeNerfModelConfig
 from nerfstudio.models.generfacto import GenerfactoModelConfig
@@ -653,6 +654,14 @@ method_configs["freenerf"] = TrainerConfig(
         ),
         model=FreeNerfModelConfig(
         ),
+        losses={
+            "depth_smoothness": DepthSmoothnessLossConfig(),
+            "occlusion": OcclusionLossConfig(),
+        },
+        loss_coefficients={
+            "depth_smoothness": 0.1,
+            "occlusion": 0.1,
+        },
     ),
     optimizers={
         "fields": {
