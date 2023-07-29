@@ -25,6 +25,11 @@ class DepthSmoothnessLossConfig(LossConfig):
 
     _target: Type = field(default_factory=lambda: DepthSmoothnessLoss)
 
+    output_names: Tuple[str, ...] = ("depth_fine", "depth_coarse")
+    """Keys of ``model.get_outputs`` to use for depth smoothness loss.
+    Default is fine/coarse depth (VanillaNerf and variants).
+    """
+
     batch_size: int = 8
     """Number of random poses to process each step.
     """
@@ -95,13 +100,14 @@ class DepthSmoothnessLoss(Loss):
 
         # Compute loss
         loss = 0
-        for depth in (outputs["depth_fine"], outputs["depth_coarse"]):
+        for key in self.config.output_names:
+            depth = outputs[key]
             # Compute depth gradients
             loss += F.mse_loss(depth[:, :, 1:, :], depth[:, :, :-1, :])
             loss += F.mse_loss(depth[:, 1:, :, :], depth[:, :-1, :, :])
-        loss /= 4
+        loss /= 2 * len(self.config.output_names)
 
-        # Start DS loss at high weight, then decrease to 1. (RegNerf paper)
+        # Start DS loss at high weight, then decrease to 1. (RegNerf supplementary paper)
         if step < 512:
             scale = np.interp(step, [0, self.config.start_weight_steps], [self.config.start_weight, 1])
         else:
