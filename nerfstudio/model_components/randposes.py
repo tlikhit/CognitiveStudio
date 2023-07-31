@@ -151,6 +151,7 @@ def forward_cameras(
 
     # Reshape outputs
     for k, v in outputs.items():
-        outputs[k] = v.view(batch_size, resolution[0], resolution[1], -1)
+        if isinstance(v, Tensor):
+            outputs[k] = v.view(batch_size, resolution[0], resolution[1], -1)
 
     return outputs

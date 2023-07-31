@@ -34,21 +34,12 @@ class RegNerfModelConfig(VanillaModelConfig):
 
     _target: Type = field(default_factory=lambda: RegNerfModel)
 
-    loss_coefficients: Dict[str, float] = to_immutable_dict({
-        "rgb_loss_coarse": 0.1,
-        "rgb_loss_fine": 1.0,
-        "depth_smoothness": 0.1,
-    })
-
     collider_params: Dict[str, Any] = to_immutable_dict({
         "near_plane": 0.5,
         "far_plane": 4.5,
         "anneal_duration": 256,
     })
     """For AnnealedCollider"""
-
-    ds_loss: DepthSmoothnessLossConfig = DepthSmoothnessLossConfig()
-    """Depth smoothness loss config."""
 
 
 class RegNerfModel(MipNerfModel):
@@ -57,7 +48,6 @@ class RegNerfModel(MipNerfModel):
 
     collider: AnnealedCollider
     config: RegNerfModelConfig
-    ds_loss: DepthSmoothnessLoss
 
     def populate_modules(self):
         """
@@ -69,12 +59,10 @@ class RegNerfModel(MipNerfModel):
         super().populate_modules()
 
         self.collider = AnnealedCollider(**self.config.collider_params)
-        self.ds_loss = self.config.ds_loss.setup()
         self.renderer_depth = DepthRenderer(method="expected")
         self.renderer_rgb = RGBRenderer(background_color=colors.BLACK)
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None):
         loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
         loss_dict["anneal_fac"] = self.collider.get_anneal_fac(self.step)
-        loss_dict["depth_smoothness"] = self.ds_loss(self, self.step)
         return loss_dict

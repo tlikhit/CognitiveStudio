@@ -144,6 +144,7 @@ class Model(nn.Module):
             step: Current training step. ``self.step`` is set to this if it is not -1.
         """
         if step != -1:
+            assert isinstance(step, int)
             self.step = step
 
         if self.collider is not None:

@@ -25,6 +25,11 @@ class DepthSmoothnessLossConfig(LossConfig):
 
     _target: Type = field(default_factory=lambda: DepthSmoothnessLoss)
 
+    output_names: Tuple[str, ...] = ("depth_fine", "depth_coarse")
+    """Keys of ``model.get_outputs`` to use for depth smoothness loss.
+    Default is fine/coarse depth (VanillaNerf and variants).
+    """
+
     batch_size: int = 8
     """Number of random poses to process each step.
     """
@@ -67,12 +72,17 @@ class DepthSmoothnessLoss(Loss):
     Samples random poses from fixed radii pointing towards origin
     (uses ``sample_randposes_sphere`` from ``randposes.py``).
 
+    Note:
+    This uses the depth output of the model, which is rendered by the DepthRenderer.
+    The DepthRenderer has a "method" argument.
+    It must be set to "expected" to propogate gradients properly.
+
     TODO allow other sampling methods.
     """
 
     config: DepthSmoothnessLossConfig
 
-    def compute_loss(self, model, step, **kwargs):
+    def compute_loss(self, *, model, step, **kwargs):
         assert model.collider is not None, "Collider must be set."
 
         randposes = sample_randposes_sphere(
@@ -90,13 +100,14 @@ class DepthSmoothnessLoss(Loss):
 
         # Compute loss
         loss = 0
-        for depth in (outputs["depth_fine"], outputs["depth_coarse"]):
+        for key in self.config.output_names:
+            depth = outputs[key]
             # Compute depth gradients
             loss += F.mse_loss(depth[:, :, 1:, :], depth[:, :, :-1, :])
             loss += F.mse_loss(depth[:, 1:, :, :], depth[:, :-1, :, :])
-        loss /= 4
+        loss /= 2 * len(self.config.output_names)
 
-        # Start DS loss at high weight, then decrease to 1. (RegNerf paper)
+        # Start DS loss at high weight, then decrease to 1. (RegNerf supplementary paper)
         if step < 512:
             scale = np.interp(step, [0, self.config.start_weight_steps], [self.config.start_weight, 1])
         else:

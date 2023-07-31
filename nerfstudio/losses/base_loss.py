@@ -2,10 +2,11 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 import torch
 from torch import Tensor
+from nerfstudio.cameras.rays import RayBundle
 
 from nerfstudio.configs.base_config import InstantiateConfig
 from nerfstudio.models.base_model import Model
@@ -45,7 +46,16 @@ class Loss(torch.nn.Module):
 
         self.config = config
 
-    def compute_loss(self, model: Model, step: int, **kwargs) -> Tensor:
+    def compute_loss(
+            self,
+            *,
+            model: Model,
+            step: int,
+            ray_bundle: RayBundle,
+            batch,
+            outputs: Dict[str, Any],
+            **kwargs,
+        ) -> Tensor:
         """Compute loss.
 
         Override this function in subclasses.
@@ -53,13 +63,32 @@ class Loss(torch.nn.Module):
         Args:
             model: Model instance to optimize for.
             step: Training step.
+            ray_bundle: RayBundle used in current step.
+            batch: Batch (returned from datamanager) used in current step.
+            outputs: Outputs from model in current step.
 
         Returns:
             Loss tensor.
         """
         raise NotImplementedError
 
-    def forward(self, model: Model, step: int, **kwargs) -> Tensor:
+    def forward(
+            self,
+            *,
+            model: Model,
+            step: int,
+            ray_bundle: RayBundle,
+            batch,
+            outputs: Dict[str, Any],
+            **kwargs,
+        ) -> Tensor:
         """Same as ``compute_loss``.
         """
-        return self.compute_loss(model, step, **kwargs)
+        return self.compute_loss(
+            model=model,
+            step=step,
+            ray_bundle=ray_bundle,
+            batch=batch,
+            outputs=outputs,
+            **kwargs
+        )

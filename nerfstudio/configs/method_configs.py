@@ -49,7 +49,10 @@ from nerfstudio.engine.schedulers import (
 from nerfstudio.engine.trainer import TrainerConfig
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.sdf_field import SDFFieldConfig
+from nerfstudio.losses.depth_smoothness import DepthSmoothnessLossConfig
+from nerfstudio.losses.occlusion import OcclusionLossConfig
 from nerfstudio.models.depth_nerfacto import DepthNerfactoModelConfig
+from nerfstudio.models.freenerf import FreeNerfModelConfig
 from nerfstudio.models.generfacto import GenerfactoModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
@@ -75,6 +78,7 @@ descriptions = {
     "semantic-nerfw": "Predicts semantic segmentations and filters out transient objects.",
     "vanilla-nerf": "Original NeRF model. (slow)",
     "regnerf": "NeRF regularized with depth smoothness and sample space annealing. (slow)",
+    "freenerf": "Extension of RegNerf with positional encoding frequency regularization. (slow)",
     "tensorf": "tensorf",
     "dnerf": "Dynamic-NeRF model. (slow)",
     "phototourism": "Uses the Phototourism data.",
@@ -617,7 +621,6 @@ method_configs["neus-facto"] = TrainerConfig(
     vis="viewer",
 )
 
-
 method_configs["regnerf"] = TrainerConfig(
     method_name="regnerf",
     pipeline=VanillaPipelineConfig(
@@ -626,6 +629,39 @@ method_configs["regnerf"] = TrainerConfig(
         ),
         model=RegNerfModelConfig(
         ),
+        losses={
+            "depth_smoothness": DepthSmoothnessLossConfig(),
+        },
+        loss_coefficients={
+            "depth_smoothness": 0.1,
+        },
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": RAdamOptimizerConfig(lr=5e-4, eps=1e-08),
+            "scheduler": None,
+        }
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer+wandb",
+)
+
+method_configs["freenerf"] = TrainerConfig(
+    method_name="freenerf",
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=NerfstudioDataParserConfig(),
+        ),
+        model=FreeNerfModelConfig(
+        ),
+        losses={
+            "depth_smoothness": DepthSmoothnessLossConfig(),
+            "occlusion": OcclusionLossConfig(),
+        },
+        loss_coefficients={
+            "depth_smoothness": 0.1,
+            "occlusion": 0.1,
+        },
     ),
     optimizers={
         "fields": {

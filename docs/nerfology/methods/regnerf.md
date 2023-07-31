@@ -68,9 +68,8 @@ begin close to the mid point, and linearly move back to their original values.
 This has the effect of gradually increasing the available scene sampling space,
 causing the model to learn a coherent object in the beginning of training.
 
-## Results
+## Uses
 
-| Implementation  | 3 view | 6 view | 9 view |
-| --------------- | ------ | ------ | ------ |
-| Official        | 18.89  | 22.20  | 24.93  |
-| CognitiveStudio | 11.27  | 17.93  | 24.19  |
+RegNeRF is good for sparse scenes. A large problem in these types of scenes is
+poor 3D consistency. The regularization methods from RegNeRF attempt to create
+a coherent object.
