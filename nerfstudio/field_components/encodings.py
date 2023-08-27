@@ -185,6 +185,77 @@ class NeRFEncoding(Encoding):
         return self.pytorch_fwd(in_tensor, covs)
 
 
+class FreeNerfEncoding(NeRFEncoding):
+    """Encoding from FreeNeRF with frequency regularization.
+
+    ind = int(3 + step / duration)
+    encoding[ind:] = 0
+
+    This masks higher frequencies in the beginning of training.
+
+    Args:
+        reg_duration: How many training steps regularization lasts for.
+    """
+
+    step: int
+    """TODO this is a workaround.
+    This encoding needs step, but step is not available in all the forwards of:
+    model -> field -> encoding
+    Modifying all base/sub classes would be a lot of work.
+    Instead, the model sets this attribute at the beginning of ``get_outputs``.
+    This is used when the field calls the encoding.
+    """
+
+    def __init__(self, reg_duration: int, **kwargs) -> None:
+        self.reg_duration = reg_duration
+        self.step = -1
+        super().__init__(**kwargs)
+
+    def get_freq_reg_index(self, step: int) -> float:
+        """Returns index to start masking from at step.
+        """
+        index = int(step / self.reg_duration * self.num_frequencies) + 3
+        index = np.clip(index, 0, self.num_frequencies)
+        return index
+
+    def pytorch_fwd(
+        self,
+        in_tensor: Float[Tensor, "*bs input_dim"],
+        covs: Optional[Float[Tensor, "*bs input_dim input_dim"]] = None,
+    ) -> Float[Tensor, "*bs output_dim"]:
+        """FreeNeRF encoding. Masks higher frequencies and progressively un-masks throughout training.
+
+        Unfortunately, there is no good way to call superclass code and modify the return.
+        So this is copied from superclass and modified for FreeNeRF.
+
+        Uses ``self.step`` for training step (see workaround above).
+        """
+        scaled_in_tensor = 2 * torch.pi * in_tensor  # scale to [0, 2pi]
+        freqs = 2 ** torch.linspace(self.min_freq, self.max_freq, self.num_frequencies).to(in_tensor.device)
+        # Mask higher frequencies
+        if self.step > 0:
+            mask_index = self.get_freq_reg_index(self.step)
+            freqs[mask_index:] = 0
+        scaled_inputs = scaled_in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
+        scaled_inputs = scaled_inputs.view(*scaled_inputs.shape[:-2], -1)  # [..., "input_dim" * "num_scales"]
+
+        if covs is None:
+            encoded_inputs = torch.sin(torch.cat([scaled_inputs, scaled_inputs + torch.pi / 2.0], dim=-1))
+        else:
+            input_var = torch.diagonal(covs, dim1=-2, dim2=-1)[..., :, None] * freqs[None, :] ** 2
+            input_var = input_var.reshape((*input_var.shape[:-2], -1))
+            encoded_inputs = expected_sin(
+                torch.cat([scaled_inputs, scaled_inputs + torch.pi / 2.0], dim=-1), torch.cat(2 * [input_var], dim=-1)
+            )
+
+        if self.include_input:
+            encoded_inputs = torch.cat([encoded_inputs, in_tensor], dim=-1)
+        return encoded_inputs
+
+    def forward(self, in_tensor, covs=None):
+        return self.pytorch_fwd(in_tensor, covs)
+
+
 class RFFEncoding(Encoding):
     """Random Fourier Feature encoding. Supports integrated encodings.
 
@@ -209,7 +280,12 @@ class RFFEncoding(Encoding):
         self.include_input = include_input
 
     def get_out_dim(self) -> int:
-        return self.num_frequencies * 2
+        out_dim = self.num_frequencies * 2
+        if self.include_input:
+            if self.in_dim is None:
+                raise ValueError("Input dimension has not been set")
+            out_dim += self.in_dim
+        return out_dim
 
     def forward(
         self,
@@ -265,7 +341,7 @@ class HashEncoding(Encoding):
         log2_hashmap_size: int = 19,
         features_per_level: int = 2,
         hash_init_scale: float = 0.001,
-        implementation: Literal["tcnn", "torch"] = "torch",
+        implementation: Literal["tcnn", "torch"] = "tcnn",
         interpolation: Optional[Literal["Nearest", "Linear", "Smoothstep"]] = None,
     ) -> None:
         super().__init__(in_dim=3)
@@ -275,18 +351,18 @@ class HashEncoding(Encoding):
         self.hash_table_size = 2**log2_hashmap_size
 
         levels = torch.arange(num_levels)
-        growth_factor = np.exp((np.log(max_res) - np.log(min_res)) / (num_levels - 1))
+        growth_factor = np.exp((np.log(max_res) - np.log(min_res)) / (num_levels - 1)) if num_levels > 1 else 1
         self.scalings = torch.floor(min_res * growth_factor**levels)
 
         self.hash_offset = levels * self.hash_table_size
-        self.hash_table = torch.rand(size=(self.hash_table_size * num_levels, features_per_level)) * 2 - 1
-        self.hash_table *= hash_init_scale
-        self.hash_table = nn.Parameter(self.hash_table)
 
         self.tcnn_encoding = None
+        self.hash_table = torch.empty(0)
         if implementation == "tcnn" and not TCNN_EXISTS:
             print_tcnn_speed_warning("HashEncoding")
-        elif implementation == "tcnn":
+            implementation = "torch"
+
+        if implementation == "tcnn":
             encoding_config = {
                 "otype": "HashGrid",
                 "n_levels": self.num_levels,
@@ -302,6 +378,10 @@ class HashEncoding(Encoding):
                 n_input_dims=3,
                 encoding_config=encoding_config,
             )
+        elif implementation == "torch":
+            self.hash_table = torch.rand(size=(self.hash_table_size * num_levels, features_per_level)) * 2 - 1
+            self.hash_table *= hash_init_scale
+            self.hash_table = nn.Parameter(self.hash_table)
 
         if self.tcnn_encoding is None:
             assert (

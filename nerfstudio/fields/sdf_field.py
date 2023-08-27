@@ -185,6 +185,7 @@ class SDFFieldConfig(FieldConfig):
     """whether to use positional encoding as input for geometric network"""
 
 
+
 class SDFField(Field):
     """_summary_
 
